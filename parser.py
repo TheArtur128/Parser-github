@@ -6,17 +6,28 @@ import os
 #Класс уверенного юзера github'а
 class User:
     Headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/92.0.4515.131 Safari/537.36"}
-    #По умолчанию url нужно вводить для парсинга страницы, но если вы захотите спарить все данные с json'a то он спарситься от-туда
-    def __init__(self, url=None, load=False, save=True):
-        print(f"Parsing from {url}...")
-        self.__URL = url
-        self.parsing(load=load, save=save)
+    #Версия самого парсера и его json файлов.
+    #При не соответсвии версий при парсинге из json'ов выдаёт ошибку
+    VERSION = "0.1.0"
 
-    #По умолчанию парсим данные и сохраняем их в json. Также можем загрузить данные из json'а и отключить save
+    #По умолчанию url нужно вводить для парсинга страницы, но если вы захотите спарить все данные с json'a то он спарситься от-туда
+    def __init__(self, url=None, load=False, save=True, exception=False):
+        #Упоменания место парсинга
+        if url is not None:
+            print(f"Parsing from {url}...")
+        elif load:
+            print(f"Parsing from Github-users/{load}.json...")
+
+        self.__parser_version = User.VERSION
+        self.__URL = url
+        self.parsing(load=load, exception=exception, save=save)
+
     #При парсинге json'a данные само сабой заного в json не сахроняються
-    #load_from_json принимает не True а название json файла в катологе юзеров без расширения
-    #Также save_to_json лучьше трогать лишь в исключительные моменты
-    def parsing(self, load=False, save=True):
+    #По умолчанию парсим данные и сохраняем их в json. Также можем загрузить данные из json'а и отключить save
+    #load принимает не True а название json файла в катологе юзеров без расширения
+    #Также save лучьше трогать лишь в исключительные моменты
+    #Для пролёта ошибки с версией при парсинге json укажите exception=True
+    def parsing(self, load=False, exception=False, save=True):
         #Парсим данные и сохраняем их или не сахроняем
         if not load:
             self.__parsing_data()
@@ -26,10 +37,14 @@ class User:
 
         #Загружаем уже напарсированые данные из католога
         elif load:
-            self.__dict__ = json.loads(open(f"Github-users/{load}.json", "r").read())
-            open(f"Github-users/{load}.json").close()
+            book = json.loads(open(f"Github-users/{load}.json", "r").read())
+            if book["_User__parser_version"] == User.VERSION or exception:
+                self.__dict__ = book
+                open(f"Github-users/{load}.json").close()
+            else:
+                raise ImportError (f"{book['_User__parser_version']} is no longer served. If you still want to parse then specify exception=True")
 
-    #Сохраняем __dict__ нашего экземпляра в .json
+    #Сохраняем __dict__ нашего экземпляра в файл json что в каталоге
     def save(self):
         #Создаём каталог пользователей если он отсутсвует
         try:
@@ -56,11 +71,14 @@ class User:
         if description == "":
             description = "Unknown"
 
+        #Время регимтрации
+        time = content.find("relative-time", class_="no-wrap").text
+
         #Аватарка как ссылка на картинку
         avatar = content.find("img", alt="Avatar").get("src")
 
         #Собираем все данные вместе
-        self.__vacancy = {"name": name, "description": description, "avatar": avatar}
+        self.__vacancy = {"name": name, "description": description, "creation time": time, "avatar": avatar}
 
     #Парсинг страницы с репозиториями
     def __parsing_repositories(self):
@@ -138,7 +156,7 @@ class User:
                         "name": repositories_names[i],
                         "description": repositories_description[i],
                         "language": repositories_language[i],
-                        "time": repositories_time[i],
+                        "interaction time": repositories_time[i],
                         "link": repositories_links[i]
                     })
 
@@ -149,8 +167,5 @@ class User:
     def vacancy(self): return self.__vacancy
     @property
     def repositories(self): return self.__repositories
-
-URL_ = ["https://github.com/TheArtur128", "https://github.com/tj", "https://github.com/e", "https://github.com/LitoMore", "https://github.com/andreyvital", "https://github.com/amorist", "https://github.com/medikoo", "https://github.com/zfarbp", "https://github.com/gregberge", "https://github.com/neighborhood999", "https://github.com/loganpowell", "https://github.com/queckezz"]
-pack = []
-for i in range(len(URL_)):
-    pack.append(User(URL_[i]))
+    @property
+    def parser_version(self): return self.__parser_version
