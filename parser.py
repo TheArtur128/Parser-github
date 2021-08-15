@@ -1,19 +1,44 @@
 from bs4 import BeautifulSoup
 import requests
+import json
+import os
 
 #Класс уверенного юзера github'а
 class User:
     Headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/92.0.4515.131 Safari/537.36"}
-    def __init__(self, url):
+    #По умолчанию url нужно вводить для парсинга страницы, но если вы захотите спарить все данные с json'a то он спарситься от-туда
+    def __init__(self, url=None, load=False, save=True):
         print(f"Parsing from {url}...")
         self.__URL = url
-        #Парсинг на практике
-        self.parsing()
+        self.parsing(load=load, save=save)
 
-    #Запускает все парсеры-методы. Может вызван что-бы обновить данные
-    def parsing(self):
-        self.__parsing_data()
-        self.__parsing_repositories()
+    #По умолчанию парсим данные и сохраняем их в json. Также можем загрузить данные из json'а и отключить save
+    #При парсинге json'a данные само сабой заного в json не сахроняються
+    #load_from_json принимает не True а название json файла в катологе юзеров без расширения
+    #Также save_to_json лучьше трогать лишь в исключительные моменты
+    def parsing(self, load=False, save=True):
+        #Парсим данные и сохраняем их или не сахроняем
+        if not load:
+            self.__parsing_data()
+            self.__parsing_repositories()
+            if save:
+                self.save()
+
+        #Загружаем уже напарсированые данные из католога
+        elif load:
+            self.__dict__ = json.loads(open(f"Github-users/{load}.json", "r").read())
+            open(f"Github-users/{load}.json").close()
+
+    #Сохраняем __dict__ нашего экземпляра в .json
+    def save(self):
+        #Создаём каталог пользователей если он отсутсвует
+        try:
+            os.mkdir("Github-users")
+        except FileExistsError: pass
+
+        #Создаём json-файл под конкретного юзера
+        with open(f"Github-users/{self.__vacancy['name']}.json", "w") as file:
+            json.dump(self.__dict__, file, indent=4)
 
     #Парсинг данных с основной страницы
     def __parsing_data(self):
@@ -35,7 +60,7 @@ class User:
         avatar = content.find("img", alt="Avatar").get("src")
 
         #Собираем все данные вместе
-        self.__vacancy = {name: [description, avatar]}
+        self.__vacancy = {"name": name, "description": description, "avatar": avatar}
 
     #Парсинг страницы с репозиториями
     def __parsing_repositories(self):
@@ -109,14 +134,23 @@ class User:
             else:
                 self.__repositories = []
                 for i in range(len(repositories_names)):
-                    self.__repositories.append({repositories_names[i]: [repositories_description[i], repositories_language[i], repositories_time[i], repositories_links[i]]})
+                    self.__repositories.append({
+                        "name": repositories_names[i],
+                        "description": repositories_description[i],
+                        "language": repositories_language[i],
+                        "time": repositories_time[i],
+                        "link": repositories_links[i]
+                    })
 
     def __repr__(self):
-        return self.__vacancy
+        return self.__vacancy["name"]
 
     @property
     def vacancy(self): return self.__vacancy
     @property
     def repositories(self): return self.__repositories
 
-Arthur = User("https://github.com/TheArtur128")
+URL_ = ["https://github.com/TheArtur128", "https://github.com/tj", "https://github.com/e", "https://github.com/LitoMore", "https://github.com/andreyvital", "https://github.com/amorist", "https://github.com/medikoo", "https://github.com/zfarbp", "https://github.com/gregberge", "https://github.com/neighborhood999", "https://github.com/loganpowell", "https://github.com/queckezz"]
+pack = []
+for i in range(len(URL_)):
+    pack.append(User(URL_[i]))
