@@ -1,116 +1,124 @@
 import json
-import os
 
 from bs4 import BeautifulSoup
 import requests
 
-Headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/92.0.4515.131 Safari/537.36"}
 
+class ParseEntity:
+    """Parses and encapsulates this data"""
+    show_the_process = True
 
-class Github_User:
-    def __init__(self, url=None):
-        self.__URL = url
-        self.parsing()
+    def __init__(self, url: str):
+        self.url = url
+        self.update()
 
-    def parsing(self):
-        print(f"Parsing from {self.__URL}...")
-        self.__parsing_main_page()
-        self.__parsing_repositories_page()
+    def update(self) -> None:
+        pass
 
-    def save_instances(self):
-        try: os.mkdir("Github-users")
-        except FileExistsError: pass
+    def parse(self) -> dict:
+        pass
 
-        #Создаём json-файл под конкретного юзера
-        with open(f"Github-users/{self.__info['name']}.json", "w") as file:
-            print(f"Saving {self.__info['name']}'s github data to json")
-            json.dump(self.__dict__, file, indent=2)
+    def parse_main_page(self) -> dict:
+        pass
 
-    def __parsing_main_page(self):
-        #Контент основной страницы
-        page = requests.get(self.__URL, headers=Headers)
-        content = BeautifulSoup(page.content, "lxml")
+    def _get_html_from(self, url: str, method: str = "lxml") -> BeautifulSoup:
+        if self.show_the_process: print(f"parse {url}")
+        return BeautifulSoup(
+            requests.get(
+                url,
+                headers=self.headers
+            ).content,
+            method
+        )
 
-        name = content.find("span", class_="p-name vcard-fullname d-block overflow-hidden").text.strip()
-        if name == "":
-            name = content.find("span", class_="p-nickname vcard-username d-block").text.strip()
+    @property
+    def headers(self):
+        return {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/92.0.4515.131 Safari/537.36"}
+  
 
-        description = content.find("div", class_="p-note user-profile-bio mb-3 js-user-profile-bio f4").text
-        if description == "":
-            description = "Unknown"
+class GithubUser(ParseEntity):
+    """Parses account data"""
 
-        try: creation_time = content.find("relative-time", class_="no-wrap").text
-        except AttributeError: creation_time = "Unknown"
+    def update(self) -> None:
+        parsing_data = self.parse()
+        self.fullname = parsing_data["fullname"]
+        self.username = parsing_data["username"]
+        self.description = parsing_data["description"]
+        self.link_to_avatar = parsing_data["link to avatar"]
+        self.repositories = parsing_data["links to repositories"]
 
-        avatar = content.find("img", alt="Avatar").get("src")
-        #Собираем все данные вместе
-        self.__info = {"name": name, "description": description, "creation time": creation_time, "avatar": avatar}
+    def __str__(self) -> str:
+        return self.username
 
-    def __parsing_repositories_page(self):
-        #Получаем контент страницы с репами
-        page = requests.get(f"{self.__URL}?tab=repositories", headers=Headers)
-        content = BeautifulSoup(page.content, "lxml")
+    def __repr__(self) -> str:
+        return f"{self.username}: {self.description}"
 
-        #Парсим количества репозиториев
-        summing_repositories = content.find("span", class_="Counter")
-        #Если репозиториев нет то новый атрибут у обьекта не появиться
-        if summing_repositories is None or summing_repositories == "":
-            repositories_on_page = 0
-        else:
-            repositories_on_page = int(summing_repositories.get("title"))
+    def parse(self) -> dict:
+        return {
+            **self.parse_main_page(),
+            **self.parse_repositories_page()
+        }
 
-        #Хранилище для напарсированной информации
-        repositories_names = []
-        repositories_links = []
-        repositories_language = []
-        repositories_time = []
-        repositories_description = []
+    def parse_main_page(self) -> dict:
+        content = self._get_html_from(self.url)
+        return {
+            "fullname": content.find("span", class_="p-name vcard-fullname d-block overflow-hidden").text.strip(),
+            "username": content.find("span", class_="p-nickname vcard-username d-block").text.strip(),
+            "description": content.find("div", class_="p-note user-profile-bio mb-3 js-user-profile-bio f4").text.strip(),
+            "link to avatar": content.find("a", itemprop="image").get("href")
+        }
 
-        block = content.find_all("li", itemprop="owns")
+    def parse_repositories_page(self) -> dict:
+        content = self._get_html_from(f"{self.url}?tab=repositories")
 
-        while repositories_on_page > 0:
-            for item in block:
-                repositories_names.append(item.find("h3", class_="wb-break-all").text.strip())
+        number_of_repositories = int(content.find("span", class_="Counter").text)
+        data = {
+            "links to repositories": []
+        }
 
-                repositories_links.append(f"https://github.com/{item.find('a', itemprop='name codeRepository').get('href')}")
+        while True:
+            for line in content.find_all("a", itemprop="name codeRepository"):
+                data["links to repositories"].append(f'https://github.com{line.get("href")}')
 
-                language = item.find("span", itemprop="programmingLanguage")
-                if language is None:
-                    repositories_language.append("Unknown")
-                else:
-                    repositories_language.append(language.text)
+            number_of_repositories -= 30 #maximum amount that can be on a page
 
-                time = item.find("relative-time", class_="no-wrap")
-                if time is None:
-                    repositories_time.append("Unknown")
-                else:
-                    repositories_time.append(time.text)
-
-                description = item.find("p", class_="col-9 d-inline-block color-text-secondary mb-2 pr-4")
-                if description is None:
-                    repositories_description.append("Unknown")
-                else:
-                    repositories_description.append(description.text.strip())
-
-            #Отнимаем от количества репозиториев сумму всех репов на странице
-            repositories_on_page -= 30
-
-            #Переходим на следующий цикл итерации если остались репозитории
-            if repositories_on_page > 0:
-                new_page = content.find("a", class_="btn btn-outline BtnGroup-item").get("href")
-                page = requests.get(new_page, headers=Headers)
-                content = BeautifulSoup(page.content, "lxml")
-                block = content.find_all("li", itemprop="owns")
+            if number_of_repositories > 0:
+                content = self._get_html_from(
+                    content.find_all("a", class_="btn btn-outline BtnGroup-item")[-1].get("href")
+                )
             else:
-                self.__repositories = []
-                for i in range(len(repositories_names)):
-                    self.__repositories.append({
-                        "name": repositories_names[i],
-                        "description": repositories_description[i],
-                        "language": repositories_language[i],
-                        "interaction time": repositories_time[i],
-                        "link": repositories_links[i]
-                    })
+                return data
 
-    def __repr__(self):
-        return self.__info["name"]
+
+class Repository(ParseEntity):
+    pass
+
+
+class Converter:
+    """An abstract base class for saving data to a file in a directory"""
+    show_the_process = True
+
+    def __init__(self, directory: str = None):
+        self.directory = f"{directory}\\" if directory is not None else ""
+
+    def save(self, object: object, filename: str) -> None:
+        pass
+
+
+class JSONConverter(Converter):
+    def save(self, object: object, filename: str = None) -> None:
+        directory = f"{self.directory}{filename if filename is not None else f'{object}.json'}"
+        with open(directory , "w") as file:
+            json.dump(object.__dict__, file, indent=2)
+
+        if self.show_the_process:
+            print(f"{object} data saved in {directory}")
+
+
+if __name__ == "__main__":
+    user = GithubUser("https://github.com/TheArtur128")
+    JSONConverter().save(user)
+    print("parsing data:")
+    for key, values in user.__dict__.items():
+        print(f"  {key}: {values}")
+    
